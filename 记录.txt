@@ -1,58 +1,101 @@
-use std::time::{Duration, Instant};
+cargo ndk -t arm64-v8a -o ./jniLibs build --release
+cargo ndk -t x86_64 -o ./jniLibs build --release
 
-#[derive(Debug, Clone)]
-pub struct GameResource {
-    pub id: u32,   // 资源ID
-    pub value: i64, // 资源值
-    pub max: i64,   // 资源上限
-    pub per_tick: i64,  // 每秒资源增量
-    pub interval_ms: u64,  // 资源间隔（毫秒）
-    pub last_tick_ms: u64, // 上一次刷新时刻（毫秒）
+cargo ndk -t x86_64 -o ./jniLibs build --release --features android
+cargo ndk -t arm64-v8a -o ./jniLibs build --release --features android
+
+rustup target add x86_64-linux-android
+cargo ndk -t arm64-v8a -t x86_64 -o ./jniLibs build --release
+
+
+use tokio::time::{sleep, Duration,Instant};
+
+pub struct Resource {
+    pub id: u32,        // 资源ID
+    pub name: String,   // 资源名称
+    pub value: u128,    // 当前值
+    pub max: u128,      // 最大值
+    pub change: u128,   // 变化量
+    pub interval: u64,  // 周期
+    pub last_tick: u64, // 上一次刷新时间
+    pub due_tick: u64,  // 到期时间
 }
 
-impl GameResource {
 
-     #[inline]
-    pub fn next_tick(&self) -> u64 {
-        self.last_tick_ms + self.interval_ms
-    }
 
+use std::{collections::{BTreeMap, HashMap}, sync::Arc};
+
+
+#[derive(Debug, Clone, Default, PartialEq)]
+#[warn(dead_code)]   //TODO 后面删除
+struct DQWMResource {
+    id: i32, // 唯一标识符
+    name: String, // 资源名称
+    description: String, // 资源描述
+    value: u128, // 资源值
+    max: u128, // 资源最大值
+    change: u128, // 资源变化值
+    interval: u16, // 资源刷新间隔   0表示不刷新,1000代表1秒更新一次
+    next_tick: u64, // 下一次到期时间
+    last_update_at: u64, // 最后一次更新时间
+}
+
+impl DQWMResource{
+
+    //设置资源值
     #[inline]
-    pub fn set_value(&mut self) {
-        self.value = (self.value + self.per_tick).min(self.max);
+    pub fn set_value(&mut self, value: u128) {
+        self.value = (value + self.change).min(self.max);
+    }
+
+    // 补收益
+    #[inline]
+    pub fn catch_up(&mut self) {
+        self.set_value( (now_ms() - (self.last_update_at as u128) ) / (self.interval as u128) )
     }
 }
 
-// 资源管理
-pub struct GameResourceManagement {
-    pub resources: Vec<GameResource>,
-}
-impl GameResourceManagement { 
-
+struct  DQWMResourceMgr{
+    _resources: Vec<DQWMResource>, // 资源列表
+    _is_stop: bool // 运行状态, 默认 true
 }
 
-async fn _schedule_tick(){
-    AAs
-
-}sasasas
+impl  DQWMResourceMgr{
 
 
+    fn _run(&mut self){
+        // 找到最近的一批
+        let now =   now_ms();
+        let expire:Vec<_> = self._resources.iter()
+       
+        .collect();
 
+        expire.iter().for_each(|i| println!("{:?}", i));
+
+    }
+
+
+}
+
+ 
+// 获取当前时间毫秒数
+#[inline]
+fn now_ms() -> u128 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+}
+
+// 资源ID
 
 fn main() {
-    let mut resources = vec![
-        GameResource { id: 1, value: 0, max: 100, per_tick: 1, interval_ms: 1000, last_tick_ms: 0 },
-        GameResource { id: 2, value: 0, max: 100, per_tick: 1, interval_ms: 1000, last_tick_ms: 0 },
-        GameResource { id: 3, value: 0, max: 100, per_tick: 1, interval_ms: 2000, last_tick_ms: 0 },
-    ];
+    let dqwm_resource_mgr =  DQWMResourceMgr();
+    dqwm_resource_mgr.
 
 
 }
-
-
-
-
-
 
 
 
@@ -192,7 +235,7 @@ pub struct Unit {
 
  // 动态执行
 
- use rhai::{Engine, Map, AST};
+use rhai::{Engine, Map, AST};
 use std::time::Instant;
 
 fn main() {
