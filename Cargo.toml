@@ -5,65 +5,24 @@ edition = "2024"
 
 [lib]
 name = "dqwm"
-crate-type = ["lib", "cdylib"]
-
+path = "src/lib.rs"
+crate-type = ["lib","cdylib"]
 
 [[bin]]
-name = "qiang"
+name = "dqwm_desktop"
 path = "src/main.rs"
 
+
 [dependencies]
-bevy = { version = "0.15.2", features = [
-    # "android-game-activity",    # Android GameActivity 支持（默认开，二选一）
-    # "android-native-activity",  # 如用原生 Activity 可打开，与上行互斥
-    # "android_shared_stdcxx",    # Android 下用共享 stdcxx，减少包体
-    # "animation",                # 动画系统 + glTF 动画导入
-    # "bevy_animation",           # 显式开动画功能（与上行重复，可省）
-    "bevy_asset",                 # 资源管理（必须）
-    # "bevy_audio",               # 音频支持（需要时再开）
-    "bevy_color",                 # 公共颜色类型（小且常用）
-    "bevy_core_pipeline",         # 相机、基础渲染管线（必须）
-    # "bevy_gilrs",               # 游戏手柄（桌面/主机有用）
-    # "bevy_gizmos",              # 调试可视化线框/箭头
-    # "bevy_gltf",                # glTF 模型/场景导入
-    # "bevy_mesh_picking_backend",# 网格拾取（3D 点击检测）
-    # "bevy_pbr",                 # PBR 渲染（3D 需要）
-    "bevy_render",                # 渲染核心（必须）
-    # "bevy_scene",               # 场景文件保存/加载
-    "bevy_sprite",                # 2D 精灵（做 UI 也要）
-    # "bevy_sprite_picking_backend",# 2D 精灵拾取
-    # "bevy_state",               # 全局状态机（复杂逻辑再用）
-    "bevy_text",                  # 文本渲染（必须）
-    "bevy_ui",                    # UI 框架（必须）
-    # "bevy_ui_picking_backend",  # UI 点击检测（默认已带，可省）
-    "bevy_window",                # 窗口管理（必须）
-    # "bevy_winit",               # winit 后端（桌面默认带，Android 已用 game-activity 可省）
-    # "custom_cursor",            # 自定义鼠标（桌面有用）
-    "default_font",               # 内置 ASCII 字体（20 KB，先开着）
-    # "hdr",                      # HDR 纹理格式（模拟器易粉屏，先关）
-    # "ktx2",                     # KTX2 压缩纹理（需要时再开）
-    "multi_threaded",             # 多线程并行（默认开，性能关键）
-    "png",                        # PNG 解码（UI、图标必备）
-    # "smaa_luts",                # SMAA 抗锯齿查找表（3D 高品质）
-    # "sysinfo_plugin",           # 系统信息诊断（调试再用）
-    # "tonemapping_luts",         # 色调映射查找表（粉屏时打开）
-    # "vorbis",                   # OGG 音频（需要时再开）
-    # "webgl2",                   # WebGL2 限制（仅 Wasm）
-    # "x11",                      # Linux X11（桌面）
-    # "zstd",                     # KTX2 超压缩（需要时再开）
+bevy = { version = "0.17.2", features = [
+    "bevy_ui",       #  UI
+    "default_font",   #  默认字体
 ] }
+bevy-inspector-egui = "0.35"
 
-[feature]
-android = [
-    "bevy/android-game-activity",   #  Android GameActivity 支持
-    "bevy/bevy_ui_picking_backend", #  UI 点击检测
-    "bevy/android_shared_stdcxx",   #  Android 下用共享 stdcxx，减少包体
-]
-desktop = [
-    "bevy/x11",
-]
-
-
+[features]
+android = ["bevy/android-game-activity"]
+desktop = []
 
 [profile.release]
 opt-level = "z"       # ③ 最高优化 
@@ -71,6 +30,3 @@ lto = "thin"          # ① 链接秒级
 codegen-units = 16    # ② 并行生成
 strip = true          # 自动 strip 符号表（Rust 1.77+）
 
-[features]
-android = []
-desktop = []
