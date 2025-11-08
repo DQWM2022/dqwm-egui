@@ -8,20 +8,33 @@ name = "dqwm"
 path = "src/lib.rs"
 crate-type = ["lib","cdylib"]
 
+
 [[bin]]
 name = "dqwm_desktop"
 path = "src/main.rs"
-
+required-features = ["desktop"]
 
 [dependencies]
-bevy = { version = "0.17.2", features = [
-    "bevy_ui",       #  UI
-    "default_font",   #  默认字体
+eframe = { version = "0.33", features = [
+    "glow", # 使用 glow 作为渲染后端（OpenGL 的 Rust 封装）
+    
 ] }
-bevy-inspector-egui = "0.35"
+egui = { version = "0.33", features = [   
+     "default_fonts", # 默认字体
+    # "callstack", # 显示调用栈
+] }
+egui_extras = "0.33.0"
+log = "0.4.28"
+env_logger = "0.11.8"
+
+#[cfg(target_os = "android")]
+android_logger = "0.15.1"
+#[cfg(target_os = "android")]
+winit = "0.30.12"
+
 
 [features]
-android = ["bevy/android-game-activity"]
+android = ["eframe/android-game-activity"]
 desktop = []
 
 [profile.release]
@@ -29,4 +42,3 @@ opt-level = "z"       # ③ 最高优化
 lto = "thin"          # ① 链接秒级
 codegen-units = 16    # ② 并行生成
 strip = true          # 自动 strip 符号表（Rust 1.77+）
-
