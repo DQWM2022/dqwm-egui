@@ -1,0 +1,19 @@
+<svg width="500" height="185" viewBox="0 0 500 185" xmlns="http://www.w3.org/2000/svg">
+  <!-- 白底 -->
+  
+  <!-- 内阴影 -->
+  <rect width="500" height="185" filter="url(#insetShadow)"/>
+  <filter id="insetShadow" x="-50%" y="-50%" width="200%" height="200%">
+    <!-- 1. 模糊 Alpha -->
+    <feGaussianBlur in="SourceAlpha" stdDeviation="75" result="blur"/>
+    <!-- 2. 只在内部留阴影 -->
+    <feComposite in="blur" in2="SourceAlpha" operator="arithmetic"
+                 k2="-1" k3="1" result="innerBlur"/>
+    <!-- 3. 上颜色 #605E63 · 加重不透明度 -->
+    <feColorMatrix in="innerBlur" type="matrix"
+      values="0 0 0 0 0.376
+              0 0 0 0 0.369
+              0 0 0 0 0.388
+              0 0 0 1 0"/>
+  </filter>
+</svg>

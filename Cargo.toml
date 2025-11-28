@@ -1,0 +1,61 @@
+[package]
+name = "dqwm"
+version = "0.1.0"
+edition = "2024"
+build = "build.rs"
+
+[lib]
+name = "dqwm"
+path = "src/lib.rs"
+crate-type = ["lib", "cdylib"]
+
+
+[[bin]]
+name = "dqwm_desktop"
+path = "src/main.rs"
+
+
+#  default-features = false,
+[dependencies]
+eframe = { version = "0.33", features = [
+    # "glow", # glow 作为渲染后端（OpenGL 的 Rust 封装）
+    "wgpu",                  #  wgpu 作为渲染后端（WebGPU 的 Rust 封装）
+    "android-game-activity",
+] }
+egui = { version = "0.33", features = [
+    "default_fonts", # 默认字体
+    "color-hex",     # 颜色宏
+    # "callstack", # 显示调用栈
+] }
+egui_extras = { version = "0.33.0", "features" = [
+    "all_loaders", # 启用所有不同类型的图像加载器的简写
+    "svg",
+    "image",
+] } # 添加更多 UI 组件
+
+image = { version = "0.25.8", features = ["png"] }
+
+log = "0.4.28"                                   # 日志
+env_logger = "0.11.8"                            # 日志
+wgpu = "27.0.1"                                  # WGPU
+resvg = "0.45.1"
+uuid = { version = "1.18.1", features = ["v4"] }
+
+#[cfg(target_os = "android")]
+android_logger = "0.15.1"
+
+#[cfg(target_os = "android")]
+winit = "0.30.12"
+
+
+tokio = "1.48.0"
+
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "2.4" # 负责调用 rc.exe
+
+
+[profile.release]
+opt-level = "z"    # ③ 最高优化
+lto = "thin"       # ① 链接秒级
+codegen-units = 16 # ② 并行生成
+strip = true       # 自动 strip 符号表（Rust 1.77+）
