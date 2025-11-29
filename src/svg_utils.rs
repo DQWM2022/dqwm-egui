@@ -1,4 +1,5 @@
 use resvg;
+use std::num::ParseIntError;
 use uuid::Uuid;
 
 pub fn get_svg_texture(
@@ -24,7 +25,7 @@ pub fn get_svg_texture(
 
 fn bg_svg(w: u32, h: u32, blur: f32, rgba: &str) -> String {
     // w 50 h 20 blur 7.5
-    let rgba = hex_to_tuple(&rgba);
+    let rgba = hex_to_tuple(rgba).unwrap_or((0.0, 0.0, 0.0, 0.0)); // 默认透明
     format!(
         r#"<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" xmlns="http://www.w3.org/2000/svg">
   <rect width="{w}" height="{h}" filter="url(#insetShadow)"/>
@@ -43,14 +44,22 @@ fn bg_svg(w: u32, h: u32, blur: f32, rgba: &str) -> String {
     )
 }
 
-fn hex_to_tuple(hex: &str) -> (f32, f32, f32, f32) {
+fn hex_to_tuple(hex: &str) -> Result<(f32, f32, f32, f32), ParseIntError> {
     let hex = hex.trim_start_matches('#');
-    let r = u8::from_str_radix(&hex[0..2], 16).unwrap() as f32 / 255.0;
-    let g = u8::from_str_radix(&hex[2..4], 16).unwrap() as f32 / 255.0;
-    let b = u8::from_str_radix(&hex[4..6], 16).unwrap() as f32 / 255.0;
-    let a = hex
-        .get(6..8)
-        .and_then(|s| u8::from_str_radix(s, 16).ok())
-        .map_or(1.0, |v| v as f32 / 255.0);
-    (r, g, b, a)
+
+    // 解析红色部分
+    let r = u8::from_str_radix(&hex[0..2], 16).map(|v| v as f32 / 255.0)?;
+
+    // 解析绿色部分
+    let g = u8::from_str_radix(&hex[2..4], 16).map(|v| v as f32 / 255.0)?;
+
+    // 解析蓝色部分
+    let b = u8::from_str_radix(&hex[4..6], 16).map(|v| v as f32 / 255.0)?;
+
+    // 解析透明度部分，如果不存在则默认为1.0
+    let a = hex.get(6..8).map_or(Ok(1.0), |s| {
+        u8::from_str_radix(s, 16).map(|v| v as f32 / 255.0)
+    })?;
+
+    Ok((r, g, b, a))
 }

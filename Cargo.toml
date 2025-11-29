@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 build = "build.rs"
 
+# 禁止使用 unwrap、expect 等不安全操作
+[lints.clippy]
+unwrap_used = "deny"
+
 [lib]
 name = "dqwm"
 path = "src/lib.rs"

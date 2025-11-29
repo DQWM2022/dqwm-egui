@@ -1,4 +1,5 @@
 use std::{
+    process,
     sync::{Arc, RwLock},
     thread,
     time::{Duration, Instant},
@@ -46,64 +47,61 @@ impl DQWMApp {
         let tid2 = texture1.id();
 
         let data = Arc::new(RwLock::new(vec![
-            Res {
-                name: ResType::Food.to(),
-                num: 10,
-                max: 10000,
-            },
-            Res {
-                name: ResType::Wood.to(),
-                num: 100,
-                max: 10000,
-            },
-            Res {
-                name: ResType::Stone.to(),
-                num: 1000,
-                max: 10000,
-            },
+            Res::new(ResType::Food.to(), 10, 10000, 1000, 100),
+            Res::new(ResType::Wood.to(), 100, 10000, 100, 10),
+            Res::new(ResType::Stone.to(), 1000, 10000, 10, 1),
         ]));
 
         let data_clone = data.clone();
         // 后台写线程
         thread::spawn(move || {
-            let mut last_food = Instant::now();
-            let mut last_wood = Instant::now();
-            let mut last_stone = Instant::now();
-
             loop {
                 let now = Instant::now();
 
-                // 粮食：1 秒
-                if now.duration_since(last_food) >= Duration::from_secs(1) {
-                    let mut data = data_clone.write().unwrap();
-                    data[0].num += 100;
-                    last_food = now;
-                }
+                // 尝试获取写锁
+                if let Ok(mut resources) = data_clone.write() {
+                    let mut next_wakeup = Duration::from_secs(1); // 默认最多等 1 秒
 
-                // 木材：100 ms
-                if now.duration_since(last_wood) >= Duration::from_millis(100) {
-                    let mut data = data_clone.write().unwrap();
-                    data[1].num += 10;
-                    last_wood = now;
-                }
+                    // 遍历所有资源，检查是否需要更新
+                    for res in resources.iter_mut() {
+                        let interval_ms = res.change_interval;
+                        if interval_ms == 0 {
+                            continue; // 跳过不自动增长的资源
+                        }
 
-                // 石头：10 ms
-                if now.duration_since(last_stone) >= Duration::from_millis(10) {
-                    let mut data = data_clone.write().unwrap();
-                    data[2].num += 1;
-                    last_stone = now;
-                }
+                        let elapsed = now.duration_since(res.last_update);
+                        let interval = Duration::from_millis(interval_ms);
 
-                // 让出 CPU，防止空转占满一个核心
-                thread::sleep(Duration::from_millis(1)); // 1ms
+                        if elapsed >= interval {
+                            // 执行增长
+                            res.num = (res.num + res.change_value).min(res.max);
+                            res.last_update = now;
+                        }
+
+                        // 计算该资源下次更新还需等待多久
+                        let remaining = interval.saturating_sub(elapsed);
+                        if remaining < next_wakeup {
+                            next_wakeup = remaining;
+                        }
+                    }
+
+                    // 释放锁后再 sleep（减少锁持有时间）
+                    drop(resources);
+
+                    // 至少 sleep 1ms，防止忙等待；最多 sleep 1 秒（兜底）
+                    thread::sleep(next_wakeup.max(Duration::from_millis(1)));
+                } else {
+                    // 锁被毒化（poisoned），短暂休眠后重试
+                    thread::sleep(Duration::from_millis(10));
+                }
             }
         });
 
         Self {
             value: 0,
             is_dark: false,
-            texture: texture,
-            texture1: texture1,
+            texture,
+            texture1,
             aspect_ratio: 50.0 / 20.0,
             index: 0,
             nav_tabs: vec![
@@ -112,7 +110,7 @@ impl DQWMApp {
                 ("商店".to_string(), tid2),
                 ("诸天".to_string(), tid2),
             ],
-            data: data,
+            data,
         }
     }
 }
@@ -141,15 +139,12 @@ impl eframe::App for DQWMApp {
                     self.is_dark = true;
                 }
             }
-
-            // 读数据
-            let data = self.data.read().unwrap();
-            let food = &data[0];
-            let wood = &data[1];
-            let stone = &data[2];
-            ui.label(format!("{}:{}/{}", food.name, food.num, food.max));
-            ui.label(format!("{}:{}/{}", wood.name, wood.num, wood.max));
-            ui.label(format!("{}:{}/{}", stone.name, stone.num, stone.max));
+            // 资源显示
+            if let Ok(data) = self.data.read() {
+                for res in data.iter() {
+                    ui.label(format!("{}: {}/{}", res.name, res.num, res.max));
+                }
+            }
 
             egui::TopBottomPanel::bottom("button")
                 .min_height(h * 0.06)
@@ -202,13 +197,15 @@ pub fn fps_label(ui: &mut egui::Ui) {
     ui.label(format!("{:.0} FPS", fps));
 }
 
-pub fn _main(options: eframe::NativeOptions) {
-    eframe::run_native(
+pub fn run_app(options: eframe::NativeOptions) {
+    if let Err(err) = eframe::run_native(
         "道起微末",
         options,
         Box::new(|cc| Ok(Box::new(DQWMApp::new(cc)))),
-    )
-    .unwrap();
+    ) {
+        eprintln!("应用启动失败！: {}", err);
+        process::exit(1);
+    }
 }
 
 // ===== Android 入口 =====
@@ -222,5 +219,5 @@ extern "Rust" fn android_main(app: winit::platform::android::activity::AndroidAp
         android_app: Some(app),
         ..Default::default()
     };
-    _main(options);
+    run_app(options);
 }

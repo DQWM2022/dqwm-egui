@@ -1,16 +1,25 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use dqwm::_main;
+use dqwm::run_app;
 use std::io::Cursor;
 
 pub const APP_NAME: &str = "道起微末";
 
 fn load_icon_png() -> egui::IconData {
-    // 1. 编译时打进二进制
-    let bytes = include_bytes!("../assets/logo.png");
+    let bytes = include_bytes!("../assets/logo_400.png");
 
-    let img = image::load(Cursor::new(bytes), image::ImageFormat::Png)
-        .unwrap()
-        .to_rgba8();
+    // 使用 match 或 if let 替代 unwrap
+    let img = match image::load(Cursor::new(bytes), image::ImageFormat::Png) {
+        Ok(img) => img.to_rgba8(),
+        Err(e) => {
+            eprintln!("Failed to load icon PNG: {}", e);
+            // 返回一个 1x1 的透明占位图标，避免崩溃
+            return egui::IconData {
+                rgba: vec![0, 0, 0, 0],
+                width: 1,
+                height: 1,
+            };
+        }
+    };
 
     let (w, h) = (img.width(), img.height());
     egui::IconData {
@@ -48,5 +57,5 @@ fn main() {
         ..Default::default()  // 使用其他默认选项
     };
 
-    _main(options);
+    run_app(options);
 }
