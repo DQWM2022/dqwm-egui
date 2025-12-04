@@ -1,10 +1,10 @@
 #[derive(Clone)]
 pub struct Unit {
     pub name: String,
-    pub hp: u64,
-    pub max_hp: u64,
-    pub atk: u64,
-    pub def: u64,
+    pub hp: u128,
+    pub max_hp: u128,
+    pub atk: u128,
+    pub def: u128,
 }
 
 impl Unit {
@@ -15,8 +15,8 @@ impl Unit {
                 name: format!("Unit {}", i),
                 hp: 100,
                 max_hp: 100,
-                atk: 20 + i as u64,
-                def: if i % 2 == 0 { 10 + i as u64 } else { 0 },
+                atk: 20 + i as u128,
+                def: if i % 2 == 0 { 10 + i as u128 } else { 0 },
             })
             .collect();
 

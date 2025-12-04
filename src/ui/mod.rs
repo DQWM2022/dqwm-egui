@@ -1,2 +1,2 @@
-pub mod area;
+pub mod battle;
 pub mod button;

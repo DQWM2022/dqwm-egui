@@ -1,33 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use dqwm::run_app;
-use std::io::Cursor;
+use dqwm::{run_app, utils};
 
 pub const APP_NAME: &str = "道起微末";
 
-fn load_icon_png() -> egui::IconData {
-    let bytes = include_bytes!("../assets/logo_400.png");
-
-    // 使用 match 或 if let 替代 unwrap
-    let img = match image::load(Cursor::new(bytes), image::ImageFormat::Png) {
-        Ok(img) => img.to_rgba8(),
-        Err(e) => {
-            eprintln!("Failed to load icon PNG: {}", e);
-            // 返回一个 1x1 的透明占位图标，避免崩溃
-            return egui::IconData {
-                rgba: vec![0, 0, 0, 0],
-                width: 1,
-                height: 1,
-            };
-        }
-    };
-
-    let (w, h) = (img.width(), img.height());
-    egui::IconData {
-        rgba: img.into_raw().to_vec(),
-        width: w,
-        height: h,
-    }
-}
 fn main() {
     env_logger::Builder::from_default_env()
         .filter_level(log::LevelFilter::Info)
@@ -40,7 +15,10 @@ fn main() {
             // .with_min_inner_size([200.0, 200.0]) // 窗口最小尺寸
             // .with_max_inner_size([500.0, 500.0]) // 非最大化时，窗口最大尺寸
             // .with_transparent(true) // 启用窗口透明
-            .with_icon(load_icon_png()) // 修改窗口/任务栏图标（详情请看上一笔记）
+            .with_icon(utils::load_icon_png(
+                include_bytes!("../assets/logo_400.png"),
+                image::ImageFormat::Png,
+            )) // 修改窗口/任务栏图标（详情请看上一笔记）
             .with_decorations(true), // false，无标题栏、边框
         // .with_close_button(true)     // false,禁用关闭按钮，不适用于 X11
         // .with_minimize_button(true)  // false，禁用最小化按钮，不适用于 X11
