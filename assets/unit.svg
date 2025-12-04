@@ -1,16 +1,15 @@
-<svg width="80" height="70" viewBox="0 0 80 70" xmlns="http://www.w3.org/2000/svg">
-  <!-- 红色外阴影滤镜 -->
-  <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
-    <feGaussianBlur in="SourceAlpha" stdDeviation="2.5"/>
-    <feColorMatrix type="matrix"
-      values="0 0 0 0 1
-              0 0 0 0 0
-              0 0 0 0 0
-              0 0 0 1 0"/>
-  </filter>
+<svg width="200" height="160" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="outer-shadow" x="-20" y="-20" width="200" height="160" color-interpolation-filters="sRGB">
+      <feFlood flood-color="red" result="color"/>
+      <feComposite in="color" in2="SourceAlpha" operator="in" result="filled"/>
+      <feGaussianBlur in="filled" stdDeviation="10" result="blurred"/>
+      <feComposite in="blurred" in2="SourceGraphic" operator="out"/>
+    </filter>
+  </defs>
 
-  <!-- 实体盒子（提供 Alpha）+ 阴影 -->
-  <rect x="15" y="15" width="50" height="40" fill="#fff" filter="url(#shadow)"/>
-  <!-- 1.5 px 边框 -->
-  <rect x="15" y="15" width="50" height="40" fill="none" stroke="#000" stroke-width="1.5"/>
+  <!-- 矩形：内缩 shadowSize，确保阴影填满整个 200x160 -->
+  <rect x="20" y="20" width="160" height="120"
+        fill="black" fill-opacity="1"
+        filter="url(#outer-shadow)" />
 </svg>

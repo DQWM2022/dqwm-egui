@@ -28,7 +28,6 @@ fn load_icon_png() -> egui::IconData {
         height: h,
     }
 }
-
 fn main() {
     env_logger::Builder::from_default_env()
         .filter_level(log::LevelFilter::Info)

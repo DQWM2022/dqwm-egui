@@ -63,3 +63,23 @@ fn hex_to_tuple(hex: &str) -> Result<(f32, f32, f32, f32), ParseIntError> {
 
     Ok((r, g, b, a))
 }
+
+// 加载 PNG 图片并创建纹理
+pub fn load_png_texture_from_bytes(ctx: &egui::Context, png_bytes: &[u8]) -> egui::TextureHandle {
+    let img = image::load_from_memory_with_format(png_bytes, image::ImageFormat::Png)
+        .expect("加载图片失败")
+        .to_rgba8();
+    let size = [img.width() as usize, img.height() as usize];
+    let color_image = egui::ColorImage::from_rgba_unmultiplied(size, img.as_raw());
+    ctx.load_texture(Uuid::new_v4(), color_image, egui::TextureOptions::LINEAR)
+}
+
+// 加载JPG图片并创建纹理
+pub fn load_jpg_texture_from_bytes(ctx: &egui::Context, jpg_bytes: &[u8]) -> egui::TextureHandle {
+    let img = image::load_from_memory_with_format(jpg_bytes, image::ImageFormat::Jpeg)
+        .expect("加载图片失败")
+        .to_rgba8();
+    let size = [img.width() as usize, img.height() as usize];
+    let color_image = egui::ColorImage::from_rgba_unmultiplied(size, img.as_raw());
+    ctx.load_texture(Uuid::new_v4(), color_image, egui::TextureOptions::LINEAR)
+}

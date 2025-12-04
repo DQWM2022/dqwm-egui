@@ -1,6 +1,4 @@
 <svg width="500" height="185" viewBox="0 0 500 185" xmlns="http://www.w3.org/2000/svg">
-  <!-- 白底 -->
-  
   <!-- 内阴影 -->
   <rect width="500" height="185" filter="url(#insetShadow)"/>
   <filter id="insetShadow" x="-50%" y="-50%" width="200%" height="200%">

@@ -1,116 +1,52 @@
-use std::{
-    process,
-    sync::{Arc, RwLock},
-    thread,
-    time::{Duration, Instant},
-};
+use egui::{CentralPanel, Frame, Visuals};
+use std::process;
+use std::sync::Arc;
+pub mod app;
+pub mod ui;
+pub mod utils;
 
-use eframe::egui;
-use egui::{CentralPanel, TextureId, Visuals, Widget};
+use app::Unit;
 
-pub mod svg_utils;
-pub mod ui {
-    pub mod button;
-}
-pub mod game {
-    pub mod res;
-}
-use game::res::{Res, ResType};
+use crate::ui::area;
 
 pub struct DQWMApp {
     pub value: i32,
-    is_dark: bool,
     #[allow(dead_code)]
     texture: egui::TextureHandle,
     #[allow(dead_code)]
     texture1: egui::TextureHandle,
-    aspect_ratio: f32, // 宽高比
-    index: usize,      // 索引
-    nav_tabs: Vec<(String, TextureId)>,
+    bg_texture: egui::TextureHandle,
+    bg_unit: egui::TextureHandle, // 最终纹理
 
-    // 游戏部分 => 资源
-    data: Arc<RwLock<Vec<Res>>>,
-    //
+    units: Vec<Vec<Unit>>,
+    rem: f32,
 }
-
 impl DQWMApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let ctx = &cc.egui_ctx; // 获取egui上下文
         ctx.set_visuals(Visuals::light()); // 亮色主题
+        load_fonts(ctx); // 加载自定义字体
 
         egui_extras::install_image_loaders(&cc.egui_ctx); // 注册图像加载器到egui上下文
         // 创建一个SVG纹理
-        let texture = svg_utils::get_svg_texture(&cc.egui_ctx, "#605e63", 50, 20, 7.5);
-        let texture1 = svg_utils::get_svg_texture(&cc.egui_ctx, "#7df604ff", 50, 20, 7.5);
+        let texture = utils::get_svg_texture(&cc.egui_ctx, "#605e63", 50, 20, 7.5);
+        let texture1 = utils::get_svg_texture(&cc.egui_ctx, "#7df604ff", 50, 20, 7.5);
 
-        let tid1 = texture.id();
-        let tid2 = texture1.id();
-
-        let data = Arc::new(RwLock::new(vec![
-            Res::new(ResType::Food.to(), 10, 10000, 1000, 100),
-            Res::new(ResType::Wood.to(), 100, 10000, 100, 10),
-            Res::new(ResType::Stone.to(), 1000, 10000, 10, 1),
-        ]));
-
-        let data_clone = data.clone();
-        // 后台写线程
-        thread::spawn(move || {
-            loop {
-                let now = Instant::now();
-
-                // 尝试获取写锁
-                if let Ok(mut resources) = data_clone.write() {
-                    let mut next_wakeup = Duration::from_secs(1); // 默认最多等 1 秒
-
-                    // 遍历所有资源，检查是否需要更新
-                    for res in resources.iter_mut() {
-                        let interval_ms = res.change_interval;
-                        if interval_ms == 0 {
-                            continue; // 跳过不自动增长的资源
-                        }
-
-                        let elapsed = now.duration_since(res.last_update);
-                        let interval = Duration::from_millis(interval_ms);
-
-                        if elapsed >= interval {
-                            // 执行增长
-                            res.num = (res.num + res.change_value).min(res.max);
-                            res.last_update = now;
-                        }
-
-                        // 计算该资源下次更新还需等待多久
-                        let remaining = interval.saturating_sub(elapsed);
-                        if remaining < next_wakeup {
-                            next_wakeup = remaining;
-                        }
-                    }
-
-                    // 释放锁后再 sleep（减少锁持有时间）
-                    drop(resources);
-
-                    // 至少 sleep 1ms，防止忙等待；最多 sleep 1 秒（兜底）
-                    thread::sleep(next_wakeup.max(Duration::from_millis(1)));
-                } else {
-                    // 锁被毒化（poisoned），短暂休眠后重试
-                    thread::sleep(Duration::from_millis(10));
-                }
-            }
-        });
+        // 加载背景图片
+        let bg_texture =
+            utils::load_jpg_texture_from_bytes(ctx, include_bytes!("../assets/bg.jpg"));
+        // 加载PNG
+        let bg_unit = utils::load_png_texture_from_bytes(ctx, include_bytes!("../assets/unit.png"));
 
         Self {
             value: 0,
-            is_dark: false,
             texture,
             texture1,
-            aspect_ratio: 50.0 / 20.0,
-            index: 0,
-            nav_tabs: vec![
-                ("领地".to_string(), tid1),
-                ("游戏".to_string(), tid1),
-                ("商店".to_string(), tid2),
-                ("诸天".to_string(), tid2),
-            ],
-            data,
+            bg_texture,
+            //bg_unit: svg_utils::get_texture_by_svg(&cc.egui_ctx, 100, 80),
+            bg_unit,
+            units: Unit::test(),
+            rem: 22.0,
         }
     }
 }
@@ -118,83 +54,74 @@ impl DQWMApp {
 impl eframe::App for DQWMApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let mut style = (*ctx.style()).clone();
-        style.interaction.selectable_labels = false; // ← 关掉
+        style.interaction.selectable_labels = false; // ← 关掉，否则文本会有选中态
         ctx.set_style(style);
 
-        //  宽高
-        let (w, h) = (ctx.viewport_rect().width(), ctx.viewport_rect().height());
-        CentralPanel::default().show(ctx, |ui| {
-            fps_label(ui);
-            ui.heading(format!(
-                "屏幕宽：{w} 高：{h}  \n\n当前页面: {} {}",
-                self.index,
-                self.nav_tabs[self.index].0.clone()
-            ));
-            if ui.button("切换主题").clicked() {
-                if self.is_dark {
-                    ctx.set_visuals(Visuals::light());
-                    self.is_dark = false;
-                } else {
-                    ctx.set_visuals(Visuals::dark());
-                    self.is_dark = true;
-                }
-            }
-            // 资源显示
-            if let Ok(data) = self.data.read() {
-                for res in data.iter() {
-                    ui.label(format!("{}: {}/{}", res.name, res.num, res.max));
-                }
-            }
+        self.rem = (ctx.viewport_rect().width() * 100. / 750.).clamp(1.0, 100.0); // 设计稿750宽度基准
 
-            egui::TopBottomPanel::bottom("button")
-                .min_height(h * 0.06)
-                .max_height(h * 0.06)
-                .frame(egui::Frame::new().inner_margin(0.)) // 去内边距
-                .show(ctx, |ui| {
-                    let total_w = ui.available_width(); // 总宽
-                    let max_h = ui.available_height();
-                    let gap = 8.0; // 总间隙
-                    let gap_half = gap;
-                    let btn_w = (total_w - gap * 5.0) / 4.0;
-                    let mut btn_h = btn_w / self.aspect_ratio; // 按钮高
+        CentralPanel::default().frame(Frame::NONE).show(ctx, |ui| {
+            // 背景
+            let screen_rect = ui.max_rect(); // 获取屏幕矩形
 
-                    if btn_h > max_h {
-                        // 超高就放弃比例
-                        btn_h = max_h; // 高锁死
+            ui.painter().image(
+                self.bg_texture.id(),
+                screen_rect,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), // UV坐标
+                egui::Color32::WHITE, // 色调（可以用来调暗或着色）
+            );
+            area::draw_area(ui, self.rem, &self.bg_unit, &self.units, true);
+            if ui.button("text").clicked() {
+                log::info!("按钮被点击了！");
+                // 扣除第一个单位10点生命值作为示例
+                if let Some(first_col) = self.units.get_mut(0)
+                    && let Some(first_unit) = first_col.get_mut(0)
+                {
+                    if first_unit.hp >= 10 {
+                        first_unit.hp -= 10;
+                    } else {
+                        first_unit.hp = 0;
                     }
-
-                    ui.allocate_ui_with_layout(
-                        ui.available_size(),
-                        egui::Layout::left_to_right(egui::Align::Center),
-                        |ui| {
-                            // 头垫一半
-                            ui.add_space(gap_half);
-                            ui.spacing_mut().item_spacing.x = gap; // 按钮之间间隙
-
-                            let btn_size = egui::vec2(btn_w, btn_h);
-
-                            // 2. 带下标循环
-                            for (idx, (label, tex)) in self.nav_tabs.iter().enumerate() {
-                                //let r = bg_button(ui, label, *tex, btn_size);
-                                let r = ui::button::QButton::new(label, *tex, btn_size).ui(ui);
-                                if r.clicked() {
-                                    self.index = idx; // 点谁设谁
-                                }
-                            }
-                            // 尾垫一半
-                            ui.add_space(gap_half);
-                        },
-                    );
-                });
+                }
+            }
+            area::draw_area(ui, self.rem, &self.bg_unit, &self.units, false);
         });
         ctx.request_repaint(); // 立即刷新
     }
 }
 
-// 极简 FPS 小部件
-pub fn fps_label(ui: &mut egui::Ui) {
-    let fps = ui.ctx().input(|i| i.unstable_dt.recip()); // 官方给的上一帧耗时
-    ui.label(format!("{:.0} FPS", fps));
+fn load_fonts(ctx: &egui::Context) {
+    // 创建默认字体配置容器
+    let mut fonts = egui::FontDefinitions::default();
+
+    // 注册自定义字体数据（需提前放置simsun.ttc在项目根目录）
+    fonts.font_data.insert(
+        "icon".to_owned(), // 字体标识名
+        Arc::new(
+            // 使用Arc实现线程安全共享
+            egui::FontData::from_owned(
+                // 转换字体数据为egui格式
+                include_bytes!("../assets/fonts/icon.ttf") // 编译时嵌入字体文件
+                    .to_vec(), // 转为Vec<u8>
+            ),
+        ),
+    );
+
+    // 配置比例字体家族（用于常规文本）
+    fonts
+        .families // 访问字体家族集合
+        .entry(egui::FontFamily::Proportional) // 获取比例字体入口
+        .or_default() // 不存在则创建默认列表
+        .insert(0, "icon".to_owned()); // 插入到最高优先级
+
+    // 配置等宽字体家族（用于代码/表格）
+    fonts
+        .families
+        .entry(egui::FontFamily::Monospace) // 获取等宽字体入口
+        .or_default()
+        .insert(0, "icon".to_owned()); // 插入到最高优先级
+
+    // 将最终配置应用到egui上下文
+    ctx.set_fonts(fonts);
 }
 
 pub fn run_app(options: eframe::NativeOptions) {
@@ -215,6 +142,7 @@ extern "Rust" fn android_main(app: winit::platform::android::activity::AndroidAp
     android_logger::init_once(
         android_logger::Config::default().with_max_level(log::LevelFilter::Info),
     );
+
     let options = eframe::NativeOptions {
         android_app: Some(app),
         ..Default::default()

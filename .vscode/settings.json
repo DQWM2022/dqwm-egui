@@ -1,6 +1,8 @@
 {
+  // ----------------------------
   "[rust]": {
-    "editor.formatOnSave": true
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "rust-lang.rust-analyzer"
   },
   // ----------------------------
   // 编辑器行为
@@ -12,6 +14,7 @@
   "editor.tabSize": 4, // Rust 官方推荐缩进 4
   "files.trimTrailingWhitespace": true, // 自动去除行尾空格
   "files.insertFinalNewline": true, // 文件末尾加换行符（符合 Unix 习惯）
+  "editor.renderWhitespace": "boundary", // 显示空格和制表符
   // ----------------------------
   // Rust Analyzer 设置
   // ----------------------------
