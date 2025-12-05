@@ -1,12 +1,35 @@
-use egui::{CentralPanel, Frame, Visuals, Widget};
+use egui::{CentralPanel, Context, Frame, Visuals};
 use std::process;
 pub mod app;
-pub mod ui;
+pub mod gui;
 pub mod utils;
 
 use app::Unit;
 
-use crate::ui::battle;
+use crate::{app::StartBattle, gui::battle};
+
+#[derive(Copy, Clone)]
+pub enum AppPage {
+    Index,  // 对应 0
+    Battle, // 对应 1
+}
+
+impl AppPage {
+    pub const ALL: [Self; 2] = [Self::Index, Self::Battle];
+
+    // 如果你真的需要索引（比如用于 UI 布局）
+    pub fn index(self) -> usize {
+        match self {
+            Self::Index => 0,
+            Self::Battle => 1,
+        }
+    }
+
+    // 从索引转回枚举（用于处理点击事件等）
+    pub fn from_index(index: usize) -> Option<Self> {
+        Self::ALL.get(index).copied()
+    }
+}
 
 pub struct DQWMApp {
     pub value: i32,
@@ -14,10 +37,13 @@ pub struct DQWMApp {
     texture: egui::TextureHandle,
     #[allow(dead_code)]
     texture1: egui::TextureHandle,
-    bg_unit: egui::TextureHandle, // 最终纹理
+    unit_bg: egui::TextureHandle, // 最终纹理
 
-    units: Vec<Vec<Unit>>,
+    battle: StartBattle,
     rem: f32,
+    current: AppPage,
+    num1: String,
+    num2: String,
 }
 impl DQWMApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -30,22 +56,92 @@ impl DQWMApp {
         let texture = utils::get_svg_texture(&cc.egui_ctx, "#605e63", 50, 20, 7.5);
         let texture1 = utils::get_svg_texture(&cc.egui_ctx, "#7df604ff", 50, 20, 7.5);
 
-        // 加载背景图片
-        // let bg_texture =
-        //     utils::load_jpg_texture_from_bytes(ctx, include_bytes!("../assets/battle.jpg"));
-
         // 加载PNG
-        let bg_unit = utils::load_png_texture_from_bytes(ctx, include_bytes!("../assets/unit.png"));
+        let unit_bg = utils::load_png_texture_from_bytes(ctx, include_bytes!("../assets/unit.png"));
 
         Self {
             value: 0,
             texture,
             texture1,
-            //bg_unit: svg_utils::get_texture_by_svg(&cc.egui_ctx, 100, 80),
-            bg_unit,
-            units: Unit::test(),
-            rem: 22.0,
+            unit_bg,
+            battle: StartBattle::default(),
+            rem: 50.0,
+            current: AppPage::Index,
+            num1: "".to_string(),
+            num2: "".to_string(),
         }
+    }
+    fn index_page(&mut self, ctx: &Context) {
+        CentralPanel::default().frame(Frame::NONE).show(ctx, |ui| {
+            ui.vertical(|ui| {
+                // 1. 获取当前可用区域的矩形
+                let rect = ui.available_rect_before_wrap();
+                // 2. 立即用 Painter 填充白色背景
+                ui.painter().rect_filled(rect, 0.0, egui::Color32::WHITE);
+
+                ui.label("敌方数量");
+                ui.text_edit_singleline(&mut self.num1);
+                ui.label("我方数量");
+                ui.text_edit_singleline(&mut self.num2);
+
+                if ui.button("转换数量并开始战斗").clicked() {
+                    let num1 = self.num1.parse().unwrap_or(0);
+                    let num2 = self.num2.parse().unwrap_or(0);
+                    let enemy = Unit::test(num1); // 敌方
+                    let friendly = Unit::test(num2); // 友方
+
+                    self.battle = StartBattle::new(enemy, friendly);
+                    self.battle.run(); // 战斗在后台运行，UI 不卡
+                    self.current = AppPage::Battle;
+                }
+
+                if ui.button("首页页面").clicked() {
+                    self.current = AppPage::Index;
+                }
+                if ui.button("战斗页面").clicked() {
+                    self.current = AppPage::Battle;
+                }
+
+                if ui.button("开始战斗").clicked() {
+                    let enemy = Unit::test(10); // 敌方
+                    let friendly = Unit::test(12); // 友方
+
+                    self.battle = StartBattle::new(enemy, friendly);
+                    self.battle.run(); // 战斗在后台运行，UI 不卡
+                    self.current = AppPage::Battle;
+                }
+            });
+        });
+    }
+
+    fn battle_page(&mut self, ctx: &Context) {
+        CentralPanel::default().frame(Frame::NONE).show(ctx, |ui| {
+            let enemy_guard = self
+                .battle
+                .enemy_units
+                .lock()
+                .expect("Failed to lock enemy_units mutex");
+            let friendly_guard = self
+                .battle
+                .friendly_units
+                .lock()
+                .expect("Failed to lock friendly_units mutex");
+            let r = battle::QBattleView::new(self.unit_bg.id(), self.rem).render(
+                &enemy_guard,
+                &friendly_guard,
+                ui,
+            );
+
+            if r.0.clicked() {
+                log::info!("投降区域被点击了！");
+            }
+            if r.1.clicked() {
+                log::info!("中间区域被点击了！");
+            }
+            if r.2.clicked() {
+                self.current = AppPage::Index;
+            }
+        });
     }
 }
 
@@ -57,25 +153,12 @@ impl eframe::App for DQWMApp {
 
         self.rem = (ctx.viewport_rect().width() * 100. / 750.).clamp(1.0, 100.0); // 设计稿750宽度基准
 
-        CentralPanel::default().frame(Frame::NONE).show(ctx, |ui| {
-            let r = battle::QBattleView::new(
-                self.units.clone(),
-                self.units.clone(),
-                self.bg_unit.id(),
-                self.rem,
-            )
-            .ui(ui);
-
-            if r.clicked() {
-                log::info!("中间区域被点击了！");
-                if let Some(first_col) = self.units.get_mut(0)
-                    && let Some(first_unit) = first_col.get_mut(0)
-                {
-                    first_unit.hp = first_unit.hp.saturating_sub(10);
-                }
-            }
-        });
-
+        // 根据 AppPage
+        match self.current {
+            AppPage::Index => self.index_page(ctx),
+            AppPage::Battle => self.battle_page(ctx),
+            // 如果有更多页面，继续加
+        }
         ctx.request_repaint(); // 立即刷新
     }
 }

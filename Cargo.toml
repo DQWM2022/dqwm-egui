@@ -51,6 +51,7 @@ android_logger = "0.15.1"
 
 #[cfg(target_os = "android")]
 winit = "0.30.12"
+rand = "0.9.2"
 
 
 [target.'cfg(windows)'.build-dependencies]
