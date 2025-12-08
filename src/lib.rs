@@ -1,12 +1,37 @@
 use egui::{CentralPanel, Context, Frame, Visuals};
-use std::process;
+use std::{
+    process,
+    sync::{Arc, RwLock, mpsc::Sender},
+};
 pub mod app;
 pub mod gui;
 pub mod utils;
 
-use app::Unit;
+use crate::{
+    app::service::{Army, GameService},
+    gui::battle,
+};
 
-use crate::{app::StartBattle, gui::battle};
+use std::sync::OnceLock;
+use tokio::runtime::Runtime;
+
+fn global_tokio_runtime() -> &'static Runtime {
+    static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("无法创建全局Tokio运行时环境！")
+    })
+}
+
+#[derive(Debug)]
+pub enum GameCommand {
+    Army(usize, usize), // 战斗信息
+    StartBattle,
+    StopBattle,
+    StopService,
+}
 
 #[derive(Copy, Clone)]
 pub enum AppPage {
@@ -32,14 +57,13 @@ impl AppPage {
 }
 
 pub struct DQWMApp {
-    pub value: i32,
+    cmd_tx: Sender<GameCommand>,
+    army: Arc<RwLock<Army>>,
     #[allow(dead_code)]
     texture: egui::TextureHandle,
     #[allow(dead_code)]
     texture1: egui::TextureHandle,
     unit_bg: egui::TextureHandle, // 最终纹理
-
-    battle: StartBattle,
     rem: f32,
     current: AppPage,
     num1: String,
@@ -47,7 +71,7 @@ pub struct DQWMApp {
 }
 impl DQWMApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let ctx = &cc.egui_ctx; // 获取egui上下文
+        let ctx: &Context = &cc.egui_ctx; // 获取egui上下文
         ctx.set_visuals(Visuals::light()); // 亮色主题
         utils::load_fonts(ctx, "icon", include_bytes!("../assets/fonts/icon.ttf")); // 加载自定义字体
 
@@ -58,13 +82,15 @@ impl DQWMApp {
 
         // 加载PNG
         let unit_bg = utils::load_png_texture_from_bytes(ctx, include_bytes!("../assets/unit.png"));
-
+        let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<GameCommand>();
+        let army: Arc<RwLock<Army>> = Default::default();
+        GameService::new(cmd_rx, army.clone()).start(); // 启动游戏服务
         Self {
-            value: 0,
+            cmd_tx,
+            army,
             texture,
             texture1,
             unit_bg,
-            battle: StartBattle::default(),
             rem: 50.0,
             current: AppPage::Index,
             num1: "".to_string(),
@@ -87,11 +113,9 @@ impl DQWMApp {
                 if ui.button("转换数量并开始战斗").clicked() {
                     let num1 = self.num1.parse().unwrap_or(0);
                     let num2 = self.num2.parse().unwrap_or(0);
-                    let enemy = Unit::test(num1); // 敌方
-                    let friendly = Unit::test(num2); // 友方
-
-                    self.battle = StartBattle::new(enemy, friendly);
-                    self.battle.run(); // 战斗在后台运行，UI 不卡
+                    if let Err(e) = self.cmd_tx.send(GameCommand::Army(num1, num2)) {
+                        log::error!("发送开始战斗命令失败: {}", e);
+                    }
                     self.current = AppPage::Battle;
                 }
 
@@ -103,12 +127,20 @@ impl DQWMApp {
                 }
 
                 if ui.button("开始战斗").clicked() {
-                    let enemy = Unit::test(10); // 敌方
-                    let friendly = Unit::test(12); // 友方
-
-                    self.battle = StartBattle::new(enemy, friendly);
-                    self.battle.run(); // 战斗在后台运行，UI 不卡
                     self.current = AppPage::Battle;
+                }
+
+                // 👇👇👇 新增：测试按钮 👇👇👇
+                ui.separator();
+                if ui.button("🧪 测试异步任务").clicked() {
+                    log::info!("【UI线程】点击了测试按钮");
+
+                    global_tokio_runtime().spawn(async move {
+                        log::info!("【Tokio后台】异步任务已启动！");
+                        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+                        log::info!("【Tokio后台】1秒后执行完毕");
+                    });
                 }
             });
         });
@@ -116,30 +148,25 @@ impl DQWMApp {
 
     fn battle_page(&mut self, ctx: &Context) {
         CentralPanel::default().frame(Frame::NONE).show(ctx, |ui| {
-            let enemy_guard = self
-                .battle
-                .enemy_units
-                .lock()
-                .expect("Failed to lock enemy_units mutex");
-            let friendly_guard = self
-                .battle
-                .friendly_units
-                .lock()
-                .expect("Failed to lock friendly_units mutex");
-            let r = battle::QBattleView::new(self.unit_bg.id(), self.rem).render(
-                &enemy_guard,
-                &friendly_guard,
-                ui,
-            );
-
-            if r.0.clicked() {
-                log::info!("投降区域被点击了！");
-            }
-            if r.1.clicked() {
-                log::info!("中间区域被点击了！");
-            }
-            if r.2.clicked() {
-                self.current = AppPage::Index;
+            if let Ok(army) = self.army.read() {
+                let r = battle::QBattleView::new(self.unit_bg.id(), self.rem).render(
+                    &army.enemy_units,
+                    &army.friendly_units,
+                    ui,
+                );
+                if r.0.clicked() {
+                    let _ = self.cmd_tx.send(GameCommand::StopBattle);
+                    log::info!("投降区域被点击了！");
+                }
+                if r.1.clicked() {
+                    log::info!("开始区域被点击了！");
+                    let _ = self.cmd_tx.send(GameCommand::StartBattle);
+                }
+                if r.2.clicked() {
+                    self.current = AppPage::Index;
+                }
+            } else {
+                log::error!("无法获取军队的读锁！");
             }
         });
     }

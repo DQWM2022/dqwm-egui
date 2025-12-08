@@ -33,6 +33,5 @@ fn main() {
         centered: true,       // 窗口启动时在屏幕上居中显示
         ..Default::default()  // 使用其他默认选项
     };
-
     run_app(options);
 }
