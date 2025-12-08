@@ -1,16 +1,12 @@
+use crossbeam::channel::{self, Receiver};
 use egui::{CentralPanel, Context, Frame, Visuals};
-use std::{
-    process,
-    sync::{Arc, mpsc::Sender},
-};
+use std::{process, sync::mpsc::Sender};
 pub mod app;
-pub mod double_buffer;
 pub mod gui;
 pub mod utils;
 
 use crate::{
     app::service::{Army, GameService},
-    double_buffer::DoubleBuffer,
     gui::battle,
 };
 
@@ -60,7 +56,8 @@ impl AppPage {
 
 pub struct DQWMApp {
     cmd_tx: Sender<GameCommand>,
-    army: Arc<DoubleBuffer<Army>>,
+    receiver: Receiver<Army>,
+    current_army: Army,
     #[allow(dead_code)]
     texture: egui::TextureHandle,
     #[allow(dead_code)]
@@ -85,12 +82,14 @@ impl DQWMApp {
         // 加载PNG
         let unit_bg = utils::load_png_texture_from_bytes(ctx, include_bytes!("../assets/unit.png"));
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<GameCommand>();
-        let buffer = Arc::new(DoubleBuffer::<Army>::new(Army::default()));
 
-        GameService::new(cmd_rx, Arc::clone(&buffer)).start(); // 启动游戏服务
+        let (sender, receiver) = channel::bounded(2);
+
+        GameService::new(cmd_rx, sender).start(); // 启动游戏服务
         Self {
             cmd_tx,
-            army: buffer,
+            receiver,
+            current_army: Army::default(),
             texture,
             texture1,
             unit_bg,
@@ -154,15 +153,20 @@ impl DQWMApp {
 
     fn battle_page(&mut self, ctx: &Context) {
         CentralPanel::default().frame(Frame::NONE).show(ctx, |ui| {
-            let army_arc = self.army.read();
+            // 1. 尝试更新缓存（有新数据就换，没有就保持原样）
+            while let Ok(army) = self.receiver.try_recv() {
+                self.current_army = army; // 直接覆盖
+            }
 
+            // 2. 无条件渲染！永远用 self.current_army
             let r = battle::QBattleView::new(self.unit_bg.id(), self.rem).render(
-                &army_arc.enemy_units,
-                &army_arc.friendly_units,
-                army_arc.enemy_num,
-                army_arc.friendly_num,
+                &self.current_army.enemy_units,
+                &self.current_army.friendly_units,
+                self.current_army.enemy_num,
+                self.current_army.friendly_num,
                 ui,
             );
+
             if r.0.clicked() {
                 let _ = self.cmd_tx.send(GameCommand::StopBattle);
                 log::info!("投降区域被点击了！");

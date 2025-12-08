@@ -1,12 +1,13 @@
+use crossbeam::channel::Sender;
 use rand::seq::IndexedRandom;
 use std::{
     collections::VecDeque,
-    sync::{Arc, mpsc::Receiver},
+    sync::mpsc::Receiver,
     thread,
     time::{Duration, Instant},
 };
 
-use crate::{GameCommand, app::Unit, double_buffer::DoubleBuffer};
+use crate::{GameCommand, app::Unit};
 
 #[derive(Default, Debug, Clone)]
 pub struct Army {
@@ -27,17 +28,17 @@ pub struct GameService {
     cmd_rx: Receiver<GameCommand>, // 接收消息
     pub running: bool,
     pub battle_running: bool, // 只处理战斗
-    pub army_view: Arc<DoubleBuffer<Army>>,
+    pub sender: Sender<Army>,
     pub army: Army,
 }
 
 impl GameService {
-    pub fn new(cmd_rx: Receiver<GameCommand>, army_view: Arc<DoubleBuffer<Army>>) -> Self {
+    pub fn new(cmd_rx: Receiver<GameCommand>, sender: Sender<Army>) -> Self {
         Self {
             cmd_rx,
             running: false,
             battle_running: false,
-            army_view,
+            sender,
             army: Army::default(),
         }
     }
@@ -115,25 +116,22 @@ impl GameService {
         {
             return;
         }
-        self.army_view.write(|view_army| {
-            // 只取每列前 10 个单位（或更少）
-            view_army.enemy_units = self
+        let _ = self.sender.try_send(Army {
+            enemy_units: self
                 .army
                 .enemy_units
                 .iter()
                 .map(|col| col.iter().take(10).cloned().collect())
-                .collect();
-
-            view_army.friendly_units = self
+                .collect(),
+            friendly_units: self
                 .army
                 .friendly_units
                 .iter()
                 .map(|col| col.iter().take(10).cloned().collect())
-                .collect();
-            view_army.enemy_num = self.army.enemy_units.iter().map(VecDeque::len).sum();
-            view_army.friendly_num = self.army.friendly_units.iter().map(VecDeque::len).sum();
+                .collect(),
+            enemy_num: self.army.enemy_units.iter().map(VecDeque::len).sum(),
+            friendly_num: self.army.friendly_units.iter().map(VecDeque::len).sum(),
         });
-        self.army_view.swap(); // 提交
     }
 
     pub fn battle_run(&mut self) -> bool {
