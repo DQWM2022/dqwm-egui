@@ -4,7 +4,7 @@ pub mod service;
 
 #[derive(Clone, Debug)]
 pub struct Unit {
-    pub name: String,
+    pub name: &'static str,
     pub hp: u128,
     pub max_hp: u128,
     pub atk: u128,
@@ -14,7 +14,7 @@ pub struct Unit {
 }
 impl Unit {
     /// 创建新单位
-    pub fn new(name: String, hp: u128, atk: u128, def: u128, speek: u64) -> Self {
+    pub fn new(name: &'static str, hp: u128, atk: u128, def: u128, speek: u64) -> Self {
         Self {
             name,
             hp,
@@ -30,9 +30,9 @@ impl Unit {
         let now = Instant::now();
         let units: Vec<Unit> = (1..=num)
             .map(|i| Unit {
-                name: format!("Unit {}", i),
-                hp: 100,
-                max_hp: 100,
+                name: "Unit",
+                hp: i as u128,
+                max_hp: i as u128,
                 atk: 10 + (i % 10) as u128,
                 def: 1,
                 speek: 100 + ((i % 100) * 2) as u64,

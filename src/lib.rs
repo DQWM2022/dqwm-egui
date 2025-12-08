@@ -1,14 +1,16 @@
 use egui::{CentralPanel, Context, Frame, Visuals};
 use std::{
     process,
-    sync::{Arc, RwLock, mpsc::Sender},
+    sync::{Arc, mpsc::Sender},
 };
 pub mod app;
+pub mod double_buffer;
 pub mod gui;
 pub mod utils;
 
 use crate::{
     app::service::{Army, GameService},
+    double_buffer::DoubleBuffer,
     gui::battle,
 };
 
@@ -58,7 +60,7 @@ impl AppPage {
 
 pub struct DQWMApp {
     cmd_tx: Sender<GameCommand>,
-    army: Arc<RwLock<Army>>,
+    army: Arc<DoubleBuffer<Army>>,
     #[allow(dead_code)]
     texture: egui::TextureHandle,
     #[allow(dead_code)]
@@ -83,11 +85,12 @@ impl DQWMApp {
         // 加载PNG
         let unit_bg = utils::load_png_texture_from_bytes(ctx, include_bytes!("../assets/unit.png"));
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<GameCommand>();
-        let army: Arc<RwLock<Army>> = Default::default();
-        GameService::new(cmd_rx, army.clone()).start(); // 启动游戏服务
+        let buffer = Arc::new(DoubleBuffer::<Army>::new(Army::default()));
+
+        GameService::new(cmd_rx, Arc::clone(&buffer)).start(); // 启动游戏服务
         Self {
             cmd_tx,
-            army,
+            army: buffer,
             texture,
             texture1,
             unit_bg,
@@ -128,6 +131,9 @@ impl DQWMApp {
 
                 if ui.button("开始战斗").clicked() {
                     self.current = AppPage::Battle;
+                    if let Err(e) = self.cmd_tx.send(GameCommand::Army(600, 600)) {
+                        log::error!("发送开始战斗命令失败: {}", e);
+                    }
                 }
 
                 // 👇👇👇 新增：测试按钮 👇👇👇
@@ -148,25 +154,25 @@ impl DQWMApp {
 
     fn battle_page(&mut self, ctx: &Context) {
         CentralPanel::default().frame(Frame::NONE).show(ctx, |ui| {
-            if let Ok(army) = self.army.read() {
-                let r = battle::QBattleView::new(self.unit_bg.id(), self.rem).render(
-                    &army.enemy_units,
-                    &army.friendly_units,
-                    ui,
-                );
-                if r.0.clicked() {
-                    let _ = self.cmd_tx.send(GameCommand::StopBattle);
-                    log::info!("投降区域被点击了！");
-                }
-                if r.1.clicked() {
-                    log::info!("开始区域被点击了！");
-                    let _ = self.cmd_tx.send(GameCommand::StartBattle);
-                }
-                if r.2.clicked() {
-                    self.current = AppPage::Index;
-                }
-            } else {
-                log::error!("无法获取军队的读锁！");
+            let army_arc = self.army.read();
+
+            let r = battle::QBattleView::new(self.unit_bg.id(), self.rem).render(
+                &army_arc.enemy_units,
+                &army_arc.friendly_units,
+                army_arc.enemy_num,
+                army_arc.friendly_num,
+                ui,
+            );
+            if r.0.clicked() {
+                let _ = self.cmd_tx.send(GameCommand::StopBattle);
+                log::info!("投降区域被点击了！");
+            }
+            if r.1.clicked() {
+                log::info!("开始区域被点击了！");
+                let _ = self.cmd_tx.send(GameCommand::StartBattle);
+            }
+            if r.2.clicked() {
+                self.current = AppPage::Index;
             }
         });
     }

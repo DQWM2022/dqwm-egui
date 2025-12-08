@@ -98,6 +98,8 @@ impl QBattleView {
         self,
         enemy_units: &[VecDeque<Unit>],
         friendly_units: &[VecDeque<Unit>],
+        enemy_num: usize,
+        friendly_num: usize,
         ui: &mut Ui,
     ) -> (Response, Response, Response) {
         // 1. 申请整个可用区域（通常是 CentralPanel 的全部）
@@ -115,51 +117,35 @@ impl QBattleView {
         p.rect_filled(bottom_half, 0.0, Color32::from_rgb(200, 200, 255)); // 淡蓝 - 友方区
         // ========DEBUG============
 
-        // 待调整 TODO
-        let enemy_total_count: usize = enemy_units.iter().map(VecDeque::len).sum();
-        let friendly_total_count: usize = friendly_units.iter().map(VecDeque::len).sum();
-
         // 敌方区域
         self.render_battle_area(top_half, p, enemy_units, true);
         // 我方阵型
         self.render_battle_area(bottom_half, p, friendly_units, false);
         // 中间区域  并且 返回三个按钮的响应
-        self.render_middle_area(middle_rect, ui, enemy_total_count, friendly_total_count)
+        self.render_middle_area(middle_rect, ui, enemy_num, friendly_num)
     }
     // 渲染 单位 阵列
     fn render_battle_area(
         &self,
         rect: Rect,
         painter: &Painter,
-        units: &[VecDeque<Unit>],
+        units: &[VecDeque<Unit>], // 👈 现在这个数据已经是裁剪后的
         reverse_vertical: bool,
     ) {
-        if units.is_empty() || units[0].is_empty() {
+        if units.is_empty() {
             return;
         }
 
         let num_cols = units.len();
         let cell_width = (rect.width() / num_cols as f32).clamp(self.rem, 2.0 * self.rem);
-        let total_used_width = cell_width * num_cols as f32;
-        let start_x = rect.min.x + (rect.width() - total_used_width) / 2.0;
-
+        let start_x = rect.min.x + (rect.width() - cell_width * num_cols as f32) / 2.0;
         let cell_height = 1.2 * self.unit_width;
-
-        // ✅ 关键：计算最多可能可见的行数（含部分可见）
-        let max_visible_rows = (rect.height() / cell_height).ceil() as usize;
 
         for (col_idx, column) in units.iter().enumerate() {
             let x = start_x + col_idx as f32 * cell_width;
 
-            // 可选：剔除整列在左右之外（小优化）
-            if x + cell_width < rect.min.x || x > rect.max.x {
-                continue;
-            }
-
-            // ✅ 只遍历最多 max_visible_rows 行（哪怕 column 更长也不看）
-            let rows_to_render = column.len().min(max_visible_rows);
-
-            for (row_idx, unit) in column.iter().enumerate().take(rows_to_render) {
+            // 直接渲染所有收到的单位（后端已裁剪）
+            for (row_idx, unit) in column.iter().enumerate() {
                 let unit_rect = if reverse_vertical {
                     let y_bottom = rect.max.y - row_idx as f32 * cell_height;
                     Rect::from_min_max(
@@ -170,7 +156,6 @@ impl QBattleView {
                     let y_top = rect.min.y + row_idx as f32 * cell_height;
                     Rect::from_min_size(pos2(x, y_top), vec2(cell_width, cell_height))
                 };
-
                 self.render_unit(unit_rect, painter, unit);
             }
         }
