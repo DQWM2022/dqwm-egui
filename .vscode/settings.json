@@ -24,7 +24,7 @@
   // 让 rust-analyzer 识别 build.rs 生成的代码（例如 prost/tonic/bindgen）。
   // 没有这个配置，生成的模块可能会显示未定义。
   "rust-analyzer.cargo.buildScripts.enable": true,
-  "rust-analyzer.cargo.target": "aarch64-linux-android",
+  "rust-analyzer.cargo.target": null, // ✅ 使用 host 平台（Windows）
   "rust-analyzer.linkedProjects": [
     "./Cargo.toml"
   ],

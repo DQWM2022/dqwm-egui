@@ -1,13 +1,13 @@
 use crossbeam::channel::{self, Receiver};
 use egui::{CentralPanel, Context, Frame, Visuals};
-use std::{process, sync::mpsc::Sender};
+use std::{process, sync::mpsc::Sender, time::Instant};
 pub mod app;
 pub mod gui;
 pub mod utils;
 
 use crate::{
     app::service::{Army, GameService},
-    gui::battle,
+    gui::battle::battle_view_ui,
 };
 
 use std::sync::OnceLock;
@@ -67,20 +67,23 @@ pub struct DQWMApp {
     current: AppPage,
     num1: String,
     num2: String,
+    last_frame_time: Option<Instant>,
+    fps: f32,
 }
 impl DQWMApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let ctx: &Context = &cc.egui_ctx; // 获取egui上下文
         ctx.set_visuals(Visuals::light()); // 亮色主题
-        utils::load_fonts(ctx, "icon", include_bytes!("../assets/fonts/icon.ttf")); // 加载自定义字体
+        utils::img::load_fonts(ctx, "icon", include_bytes!("../assets/fonts/icon.ttf")); // 加载自定义字体
 
         egui_extras::install_image_loaders(&cc.egui_ctx); // 注册图像加载器到egui上下文
         // 创建一个SVG纹理
-        let texture = utils::get_svg_texture(&cc.egui_ctx, "#605e63", 50, 20, 7.5);
-        let texture1 = utils::get_svg_texture(&cc.egui_ctx, "#7df604ff", 50, 20, 7.5);
+        let texture = utils::img::get_svg_texture(&cc.egui_ctx, "#605e63", 50, 20, 7.5);
+        let texture1 = utils::img::get_svg_texture(&cc.egui_ctx, "#7df604ff", 50, 20, 7.5);
 
         // 加载PNG
-        let unit_bg = utils::load_png_texture_from_bytes(ctx, include_bytes!("../assets/unit.png"));
+        let unit_bg =
+            utils::img::load_png_texture_from_bytes(ctx, include_bytes!("../assets/unit.png"));
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<GameCommand>();
 
         let (sender, receiver) = channel::bounded(2);
@@ -97,6 +100,8 @@ impl DQWMApp {
             current: AppPage::Index,
             num1: "".to_string(),
             num2: "".to_string(),
+            last_frame_time: None,
+            fps: Default::default(),
         }
     }
     fn index_page(&mut self, ctx: &Context) {
@@ -106,6 +111,21 @@ impl DQWMApp {
                 let rect = ui.available_rect_before_wrap();
                 // 2. 立即用 Painter 填充白色背景
                 ui.painter().rect_filled(rect, 0.0, egui::Color32::WHITE);
+
+                // --- FPS 计算 ---
+                let now = Instant::now();
+                if let Some(last) = self.last_frame_time {
+                    let elapsed_secs = (now - last).as_secs_f32();
+                    if elapsed_secs > 0.0 {
+                        // 简单低通滤波（指数平滑），让 FPS 更稳定
+                        let instantaneous_fps = 1.0 / elapsed_secs;
+                        self.fps = self.fps * 0.9 + instantaneous_fps * 0.1;
+                    }
+                }
+                self.last_frame_time = Some(now);
+
+                ui.heading(format!("FPS {}", self.fps));
+                log::info!("FPS {}", self.fps);
 
                 ui.label("敌方数量");
                 ui.text_edit_singleline(&mut self.num1);
@@ -159,23 +179,32 @@ impl DQWMApp {
             }
 
             // 2. 无条件渲染！永远用 self.current_army
-            let r = battle::QBattleView::new(self.unit_bg.id(), self.rem).render(
+            // let r = battle::QBattleView::new(self.unit_bg.id(), self.rem).render(
+            //     &self.current_army.enemy_units,
+            //     &self.current_army.friendly_units,
+            //     self.current_army.enemy_num,
+            //     self.current_army.friendly_num,
+            //     ui,
+            // );
+            let (run_btn, battle_btn, return_btn) = battle_view_ui(
+                ui,
+                self.rem,
+                self.unit_bg.id(),
                 &self.current_army.enemy_units,
                 &self.current_army.friendly_units,
                 self.current_army.enemy_num,
                 self.current_army.friendly_num,
-                ui,
             );
 
-            if r.0.clicked() {
+            if run_btn.clicked() {
                 let _ = self.cmd_tx.send(GameCommand::StopBattle);
                 log::info!("投降区域被点击了！");
             }
-            if r.1.clicked() {
+            if battle_btn.clicked() {
                 log::info!("开始区域被点击了！");
                 let _ = self.cmd_tx.send(GameCommand::StartBattle);
             }
-            if r.2.clicked() {
+            if return_btn.clicked() {
                 self.current = AppPage::Index;
             }
         });
@@ -197,6 +226,10 @@ impl eframe::App for DQWMApp {
             // 如果有更多页面，继续加
         }
         ctx.request_repaint(); // 立即刷新
+    }
+
+    fn on_exit(&mut self, _: Option<&eframe::glow::Context>) {
+        let _ = self.cmd_tx.send(GameCommand::StopService);
     }
 }
 

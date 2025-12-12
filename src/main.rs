@@ -15,7 +15,7 @@ fn main() {
             // .with_min_inner_size([200.0, 200.0]) // 窗口最小尺寸
             // .with_max_inner_size([500.0, 500.0]) // 非最大化时，窗口最大尺寸
             // .with_transparent(true) // 启用窗口透明
-            .with_icon(utils::load_icon_png(
+            .with_icon(utils::img::load_icon_png(
                 include_bytes!("../assets/logo_400.png"),
                 image::ImageFormat::Png,
             )) // 修改窗口/任务栏图标（详情请看上一笔记）

@@ -1,11 +1,3 @@
-use std::{
-    collections::VecDeque,
-    sync::atomic::{AtomicUsize, Ordering},
-    time::Instant,
-};
-
-pub mod service;
-
 static NEXT_UNIT_ID: AtomicUsize = AtomicUsize::new(1);
 
 #[derive(Clone, Debug)]
@@ -68,16 +60,5 @@ impl Unit {
         }
 
         columns
-    }
-}
-
-pub fn determine_columns(count: usize) -> usize {
-    match count {
-        1..=3 => 1,
-        4..=9 => 2,
-        10..=29 => 3,
-        30..=59 => 4,
-        60..=119 => 5,
-        _ => 6,
     }
 }
