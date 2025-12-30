@@ -1,15 +1,15 @@
 <svg width="200" height="160" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <filter id="outer-shadow" x="-20" y="-20" width="200" height="160" color-interpolation-filters="sRGB">
+    <filter id="outer-shadow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
       <feFlood flood-color="red" result="color"/>
       <feComposite in="color" in2="SourceAlpha" operator="in" result="filled"/>
-      <feGaussianBlur in="filled" stdDeviation="10" result="blurred"/>
+      <feGaussianBlur in="filled" stdDeviation="2.5" result="blurred"/>
       <feComposite in="blurred" in2="SourceGraphic" operator="out"/>
     </filter>
   </defs>
 
-  <!-- 矩形：内缩 shadowSize，确保阴影填满整个 200x160 -->
-  <rect x="20" y="20" width="160" height="120"
+  <!-- 矩形：居中的100x80内容区域 -->
+  <rect x="50" y="40" width="100" height="80"
         fill="black" fill-opacity="1"
         filter="url(#outer-shadow)" />
 </svg>

@@ -1,7 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use dqwm::{run_app, utils};
-
-pub const APP_NAME: &str = "道起微末";
+use dqwm::{APP_NAME, run, utils};
 
 fn main() {
     env_logger::Builder::from_default_env()
@@ -15,7 +13,7 @@ fn main() {
             // .with_min_inner_size([200.0, 200.0]) // 窗口最小尺寸
             // .with_max_inner_size([500.0, 500.0]) // 非最大化时，窗口最大尺寸
             // .with_transparent(true) // 启用窗口透明
-            .with_icon(utils::img::load_icon_png(
+            .with_icon(utils::load_png(
                 include_bytes!("../assets/logo_400.png"),
                 image::ImageFormat::Png,
             )) // 修改窗口/任务栏图标（详情请看上一笔记）
@@ -33,5 +31,5 @@ fn main() {
         centered: true,       // 窗口启动时在屏幕上居中显示
         ..Default::default()  // 使用其他默认选项
     };
-    run_app(options);
+    run(options);
 }
