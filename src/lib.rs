@@ -1,19 +1,36 @@
+use crossbeam::channel::{self, Receiver, Sender};
+use eframe::{App, NativeOptions};
 use egui::{
-    CentralPanel, Color32, Context, Frame, Id, Rect, TextureHandle, TextureId, Ui, Vec2, Visuals,
+    Align2, CentralPanel, Color32, Context, FontId, Frame, Id, LayerId, Order, Plugin, Rect,
+    TextureHandle, TextureId, Ui, Vec2, Visuals, pos2,
 };
 use image::ImageFormat;
+use tokio::runtime::Runtime;
 
 use std::{
     collections::{HashMap, VecDeque},
     process,
-    sync::Arc,
+    sync::{Arc, OnceLock},
+    time::{Duration, Instant},
 };
 
-use crate::{model::Unit, unit_card::battle_ui};
+use crate::core::batttle::{ArmyTick, BattleEvent};
+use crate::{components::battle_page, model::Unit};
+pub mod components;
+pub mod core;
 pub mod model;
-pub mod unit_card;
 pub mod utils;
 pub const APP_NAME: &str = "道起微末";
+
+fn global_tokio_runtime() -> &'static Runtime {
+    static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("无法创建全局Tokio运行时环境！")
+    })
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum R {
@@ -21,6 +38,13 @@ pub enum R {
 }
 impl R {
     // 加载方法
+    pub fn load(self, ctx: &Context) -> TextureHandle {
+        utils::load_texture_from_bytes(
+            ctx,
+            include_bytes!("../assets/unit_shadow.png"),
+            ImageFormat::Png,
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -51,17 +75,65 @@ impl UiExt for Ui {
     }
     fn get_texture_id(&self, r: R) -> TextureId {
         self.ctx().data(|data| {
-            data.get_temp::<HashMap<R, TextureHandle>>(Id::new(Key::Resource))
-                .expect("未初始化资源HashMap!")
-                .get(&r)
-                .expect("未初始化资源！")
-                .id()
+            let mut map = data
+                .get_temp::<HashMap<R, TextureHandle>>(Id::new(Key::Resource))
+                .expect("未初始化资源HashMap!");
+            map.entry(r).or_insert_with(|| r.load(self.ctx())).id()
         })
     }
 }
 
+#[derive(Debug)]
+struct FPSPlugin {
+    fps: f32,
+    last_update: Instant,
+    frame_count: u32,
+}
+impl Default for FPSPlugin {
+    fn default() -> Self {
+        Self {
+            fps: 0.0,
+            last_update: Instant::now(),
+            frame_count: 0,
+        }
+    }
+}
+
+impl Plugin for FPSPlugin {
+    fn debug_name(&self) -> &'static str {
+        "FPS"
+    }
+
+    fn on_begin_pass(&mut self, ctx: &Context) {
+        let now = Instant::now();
+        self.frame_count += 1;
+
+        // 每 0.5 秒更新一次 FPS（避免数字跳得太快）
+        if now.duration_since(self.last_update) >= Duration::from_millis(500) {
+            let elapsed_secs = now.duration_since(self.last_update).as_secs_f32();
+            self.fps = self.frame_count as f32 / elapsed_secs;
+            self.frame_count = 0;
+            self.last_update = now;
+        }
+
+        let painter =
+            ctx.layer_painter(LayerId::new(Order::Foreground, egui::Id::new("fps_debug")));
+        painter.text(
+            pos2(10.0, 10.0), // 文本位置
+            Align2::LEFT_TOP, // 对齐方式
+            format!("FPS:{:.1}", self.fps),
+            FontId::monospace(14.0),      // 字体大小
+            Color32::from_rgb(0, 255, 0), // 颜色
+        );
+    }
+}
+
 pub struct Application {
-    utils: Vec<VecDeque<Unit>>,
+    utils21: Vec<VecDeque<Unit>>,
+    utils22: Vec<VecDeque<Unit>>,
+    // ✅ 只保留 Receiver：UI 被动接收更新
+    army_rx: Option<Receiver<ArmyTick>>,
+    event_rx: Option<Receiver<BattleEvent>>,
 }
 impl Application {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -70,43 +142,73 @@ impl Application {
         egui_extras::install_image_loaders(&cc.egui_ctx); // 注册图像加载器到egui上下文
         load_fonts(ctx, "iconfont", include_bytes!("../assets/fonts/icon.ttf")); // 加载自定义字体
 
-        let mut res: HashMap<R, TextureHandle> = Default::default();
-
-        res.insert(
-            R::UnitShadow,
-            utils::load_texture_from_bytes(
-                ctx,
-                include_bytes!("../assets/unit_shadow.png"),
-                ImageFormat::Png,
-            ),
-        );
+        ctx.add_plugin(FPSPlugin::default());
+        let res: HashMap<R, TextureHandle> = Default::default();
         // 资源
         ctx.data_mut(|w| {
             w.insert_temp::<HashMap<R, TextureHandle>>(Id::new(Key::Resource), res);
         });
         // ctx.data(|r| r.get_temp::<u32>(Id::new(1)));
-        let utils = model::test(120);
-        Self { utils }
+
+        // let (army_tx, army_rx) = channel::bounded(2);
+        // let (event_tx, event_rx) = channel::bounded(128);
+
+        let utils21 = model::test(120);
+        let utils22 = model::test(120);
+        Self {
+            utils21,
+            utils22,
+            army_rx: None,
+            event_rx: None,
+        }
     }
 }
 
-impl eframe::App for Application {
+impl App for Application {
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
         let mut style = (*ctx.style()).clone();
         style.interaction.selectable_labels = false; // ← 关掉，否则文本会有选中态
         style.spacing.item_spacing = Vec2::ZERO;
         ctx.set_style(style);
+
         CentralPanel::default().frame(Frame::NONE).show(ctx, |ui| {
             ui.painter()
                 .rect_filled(ctx.viewport_rect(), 0.0, Color32::WHITE);
 
-            battle_ui(ui, &self.utils);
+            // battle_page::render(ui, &self.utils);
+            let (a, b, c) = battle_page::render(ui, &self.utils21, &self.utils22);
+
+            if a.clicked() {
+                global_tokio_runtime().spawn(async {
+                    log::info!("开始==》");
+                    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                    log::info!("3秒到了！");
+                    // 后台逻辑写在这里（不能操作 UI）
+                });
+            }
+            if b.clicked() {
+                global_tokio_runtime().spawn(async {
+                    log::info!("开始==》");
+                    tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
+                    log::info!("6秒到了！");
+                    // 后台逻辑写在这里（不能操作 UI）
+                });
+            }
+            if c.clicked() {
+                global_tokio_runtime().spawn(async {
+                    log::info!("开始==》");
+                    tokio::time::sleep(tokio::time::Duration::from_secs(9)).await;
+                    log::info!("9秒到了！");
+                    // 后台逻辑写在这里（不能操作 UI）
+                });
+            }
         });
+
         ctx.request_repaint(); // 立即刷新
     }
 }
 
-pub fn run(options: eframe::NativeOptions) {
+pub fn run(options: NativeOptions) {
     if let Err(err) = eframe::run_native(
         APP_NAME,
         options,
@@ -129,6 +231,8 @@ extern "Rust" fn android_main(app: winit::platform::android::activity::AndroidAp
         android_app: Some(app),
         ..Default::default()
     };
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+    let handle = rt.handle().clone();
     run(options);
 }
 
