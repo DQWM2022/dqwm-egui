@@ -5,13 +5,14 @@ use egui::{Align2, Color32, FontId, Rect, Response, Sense, Ui, Vec2, pos2, vec2}
 use crate::{
     UiExt,
     components::unit_ui::{self, ArmyType},
+    core::batttle::{ArmySnapshot, BattleEvent},
     model::Unit,
 };
 
 pub fn render(
     ui: &mut Ui,
-    units21: &[VecDeque<Unit>],
-    units22: &[VecDeque<Unit>],
+    army: &ArmySnapshot,
+    events: &VecDeque<BattleEvent>,
 ) -> (Response, Response, Response) {
     ui.spacing_mut().item_spacing = Vec2::ZERO;
     let rect = ui.available_rect_before_wrap();
@@ -22,9 +23,16 @@ pub fn render(
     let count1 = (h * 0.42 / _h) as usize + 1;
     let count2 = (h * 0.50 / _h) as usize + 1;
     // 敌方区域
-    unit_grid_ui(ui, top_rect, units21, count1, ArmyType::Enemy);
+    unit_grid_ui(ui, top_rect, &army.enemys, count1, ArmyType::Enemy, &events);
     // 我方阵型
-    unit_grid_ui(ui, bottom_rect, units22, count2, ArmyType::Ally);
+    unit_grid_ui(
+        ui,
+        bottom_rect,
+        &army.allys,
+        count2,
+        ArmyType::Ally,
+        &events,
+    );
 
     ui.allocate_rect(rect, Sense::hover()); // 手动分配占满
     middle_ui(ui, middle_rect)
@@ -37,6 +45,7 @@ fn unit_grid_ui(
     units2: &[VecDeque<Unit>],
     max_count: usize,
     army_type: ArmyType,
+    events: &VecDeque<BattleEvent>,
 ) {
     if units2.is_empty() {
         return;
@@ -67,7 +76,16 @@ fn unit_grid_ui(
                 }
             };
 
-            unit_ui::render(ui, &mut unit_rect, unit, army_type);
+            let relevant_events: Vec<&BattleEvent> = events
+                .iter()
+                .filter(|ev| match ev {
+                    BattleEvent::ATK { id, .. } if *id == unit.id as u128 => true,
+                    BattleEvent::DEF { id, .. } if *id == unit.id as u128 => true,
+                    _ => false,
+                })
+                .collect();
+
+            unit_ui::render(ui, &mut unit_rect, unit, army_type, &relevant_events);
         }
     }
 }

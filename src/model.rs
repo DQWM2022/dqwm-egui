@@ -20,19 +20,14 @@ pub struct Unit {
     pub def: u128,
     pub speek: u64, // 攻击间隔（毫秒）
 }
+impl Unit {
+    pub fn calculate_damage_to(&self, target: &Unit) -> u128 {
+        self.atk.saturating_sub(target.def)
+    }
 
-#[derive(Debug, Clone, Default)]
-pub struct GlobalArmy {
-    pub enemy_units: Vec<VecDeque<Unit>>, // 完整队列
-    pub ally_units: Vec<VecDeque<Unit>>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ViewportArmy {
-    pub enemy_units: Vec<VecDeque<Unit>>, // 完整队列
-    pub ally_units: Vec<VecDeque<Unit>>,
-    pub enemy_num: usize,
-    pub ally_num: usize,
+    pub fn is_alive(&self) -> bool {
+        self.hp > 0
+    }
 }
 
 static NEXT_UNIT_ID: AtomicUsize = AtomicUsize::new(1);

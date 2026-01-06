@@ -1,36 +1,28 @@
-use crossbeam::channel::{self, Receiver, Sender};
+use crate::core::batttle::{ArmySnapshot, BattleEvent, BattleOutput};
+use crate::{components::battle_page, model::Unit};
+
 use eframe::{App, NativeOptions};
 use egui::{
     Align2, CentralPanel, Color32, Context, FontId, Frame, Id, LayerId, Order, Plugin, Rect,
     TextureHandle, TextureId, Ui, Vec2, Visuals, pos2,
 };
+use flume::Receiver;
+use global::global_tokio_runtime;
 use image::ImageFormat;
-use tokio::runtime::Runtime;
-
 use std::{
     collections::{HashMap, VecDeque},
     process,
-    sync::{Arc, OnceLock},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
-use crate::core::batttle::{ArmyTick, BattleEvent};
-use crate::{components::battle_page, model::Unit};
 pub mod components;
 pub mod core;
+pub mod global;
 pub mod model;
 pub mod utils;
-pub const APP_NAME: &str = "道起微末";
 
-fn global_tokio_runtime() -> &'static Runtime {
-    static RUNTIME: OnceLock<Runtime> = OnceLock::new();
-    RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("无法创建全局Tokio运行时环境！")
-    })
-}
+pub const APP_NAME: &str = "道起微末";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum R {
@@ -129,11 +121,9 @@ impl Plugin for FPSPlugin {
 }
 
 pub struct Application {
-    utils21: Vec<VecDeque<Unit>>,
-    utils22: Vec<VecDeque<Unit>>,
-    // ✅ 只保留 Receiver：UI 被动接收更新
-    army_rx: Option<Receiver<ArmyTick>>,
-    event_rx: Option<Receiver<BattleEvent>>,
+    battle_rx: Option<Receiver<BattleOutput>>,
+    current_army: ArmySnapshot,
+    current_event: VecDeque<BattleEvent>,
 }
 impl Application {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -153,13 +143,10 @@ impl Application {
         // let (army_tx, army_rx) = channel::bounded(2);
         // let (event_tx, event_rx) = channel::bounded(128);
 
-        let utils21 = model::test(120);
-        let utils22 = model::test(120);
         Self {
-            utils21,
-            utils22,
-            army_rx: None,
-            event_rx: None,
+            battle_rx: None,
+            current_army: Default::default(),
+            current_event: Default::default(),
         }
     }
 }
@@ -176,21 +163,57 @@ impl App for Application {
                 .rect_filled(ctx.viewport_rect(), 0.0, Color32::WHITE);
 
             // battle_page::render(ui, &self.utils);
-            let (a, b, c) = battle_page::render(ui, &self.utils21, &self.utils22);
+
+            if let Some(ref mut rx) = self.battle_rx {
+                // 只有非空时才执行以下所有逻辑
+                while let Ok(out) = rx.try_recv() {
+                    match out {
+                        BattleOutput::ArmySnapshot(army) => {
+                            self.current_army = army;
+                        }
+                        BattleOutput::BattleEvent(event) => {
+                            println!("当前事件{:?}", event);
+                            self.current_event.push_back(event);
+
+                            // 自动限制最多 50 条：超出就从前面弹出
+                            if self.current_event.len() > 50 {
+                                self.current_event.pop_front();
+                            }
+                        }
+                    }
+                }
+            }
+            let (a, b, c) = battle_page::render(ui, &self.current_army, &self.current_event);
 
             if a.clicked() {
-                global_tokio_runtime().spawn(async {
+                let (battle_tx, battle_rx) = flume::bounded::<BattleOutput>(10);
+                self.battle_rx = Some(battle_rx);
+                global_tokio_runtime().spawn(async move {
                     log::info!("开始==》");
-                    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-                    log::info!("3秒到了！");
-                    // 后台逻辑写在这里（不能操作 UI）
+                    let _ = battle_tx.send(BattleOutput::ArmySnapshot(ArmySnapshot {
+                        enemys: model::test(120),
+                        allys: model::test(120),
+                        enemys_num: 120,
+                        allys_num: 120,
+                    }));
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    loop {
+                        for i in [1, 2, 3, 4, 5, 6] {
+                            let _ = battle_tx.send(BattleOutput::BattleEvent(BattleEvent::atk(i)));
+                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                        }
+                        for i in [121, 122, 123, 124, 125, 126] {
+                            let _ = battle_tx
+                                .send(BattleOutput::BattleEvent(BattleEvent::def(i, i * 10)));
+                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                        }
+                    }
                 });
             }
             if b.clicked() {
                 global_tokio_runtime().spawn(async {
                     log::info!("开始==》");
                     tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
-                    log::info!("6秒到了！");
                     // 后台逻辑写在这里（不能操作 UI）
                 });
             }
@@ -198,7 +221,6 @@ impl App for Application {
                 global_tokio_runtime().spawn(async {
                     log::info!("开始==》");
                     tokio::time::sleep(tokio::time::Duration::from_secs(9)).await;
-                    log::info!("9秒到了！");
                     // 后台逻辑写在这里（不能操作 UI）
                 });
             }

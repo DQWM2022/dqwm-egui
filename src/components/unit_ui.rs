@@ -7,7 +7,7 @@ use egui::{
     pos2, vec2,
 };
 
-use crate::{UiExt, model::Unit};
+use crate::{UiExt, core::batttle::BattleEvent, model::Unit};
 
 // 宏用于计算累计高度
 macro_rules! sum_arr {
@@ -22,7 +22,13 @@ pub enum ArmyType {
     Enemy,
 }
 
-pub fn render(ui: &mut Ui, cell_rect: &mut Rect, unit: &Unit, army_type: ArmyType) -> Response {
+pub fn render(
+    ui: &mut Ui,
+    cell_rect: &mut Rect,
+    unit: &Unit,
+    army_type: ArmyType,
+    events: &[&BattleEvent],
+) -> Response {
     let w = ui.rem(1.0);
     let h = ui.rem(0.8);
     let border_width = ui.rem(0.03);
@@ -37,12 +43,21 @@ pub fn render(ui: &mut Ui, cell_rect: &mut Rect, unit: &Unit, army_type: ArmyTyp
     // let (mut rect, response) = ui.allocate_exact_size(vec2(w, h), Sense::click());
 
     // 动画
-    let mut time = Option::None;
-    if response.clicked() {
-        time = Some(Instant::now());
+
+    let mut opacity = 1.0;
+    for e in events {
+        match e {
+            BattleEvent::ATK { timestamp, .. } => {
+                anim_atk(ui, &mut rect, unit.id, Some(*timestamp), army_type);
+            }
+            BattleEvent::DEF {
+                amount, timestamp, ..
+            } => {
+                opacity = anim_def(ui, unit.id, Some(*timestamp));
+                anim_text(ui, rect, Some(*timestamp), unit.id, army_type, *amount);
+            }
+        }
     }
-    anim_atk(ui, &mut rect, unit.id, time, army_type);
-    let opacity = anim_def(ui, unit.id, time);
 
     let p = ui.painter();
     // 1、阴影
@@ -129,8 +144,6 @@ pub fn render(ui: &mut Ui, cell_rect: &mut Rect, unit: &Unit, army_type: ArmyTyp
         Color32::WHITE,
     );
 
-    anim_text(ui, rect, time, unit.id, army_type);
-
     response
 }
 
@@ -209,8 +222,15 @@ fn anim_def(ui: &Ui, id: usize, trigger: Option<Instant>) -> f32 {
     opacity
 }
 
-fn anim_text(ui: &Ui, rect: Rect, trigger: Option<Instant>, id: usize, army_type: ArmyType) {
-    const TEXT: &str = "-9999";
+fn anim_text(
+    ui: &Ui,
+    rect: Rect,
+    trigger: Option<Instant>,
+    id: usize,
+    army_type: ArmyType,
+    num: u128,
+) {
+    let text: &str = &num.to_string();
     const DURATION: Duration = Duration::from_millis(1000);
     let ctx = ui.ctx();
     let anim_id = Id::new(("DAMAGE_POPUP", id));
@@ -264,7 +284,7 @@ fn anim_text(ui: &Ui, rect: Rect, trigger: Option<Instant>, id: usize, army_type
         ui.painter().text(
             pos,
             egui::Align2::CENTER_CENTER,
-            TEXT,
+            text,
             FontId::monospace(14.0),
             color,
         );
